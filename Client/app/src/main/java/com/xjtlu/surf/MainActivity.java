@@ -464,7 +464,7 @@ public class MainActivity extends AppCompatActivity {
         DecimalFormat lFormat = new DecimalFormat("0.00000000");
 
 
-        private long calcDurationMillis(String recvData, long recvTime) throws PackageLossException{
+        private long calcDurationMillis(String recvData, long recvTime){
             long sentTimestamp = -1, processDur = -1;
             int recvIndex = -1;
             // todo: get sent timestamp and index from recvData
@@ -477,12 +477,9 @@ public class MainActivity extends AppCompatActivity {
 
             long[] item = awaitRecvBackList.poll();
             if (item == null){
-                throw new PackageLossException("null await list");
+                return 0;
             }
             long itemIndex = item[awaitIndex];
-            if (itemIndex < recvIndex){
-                throw new PackageLossException("Item await");
-            }
 
             return recvTime - processDur - sentTimestamp;
         }
@@ -539,7 +536,7 @@ public class MainActivity extends AppCompatActivity {
 
                 } catch (IOException e) {
 //                    e.printStackTrace();
-                    if (e instanceof SocketException){
+                    if (e instanceof SocketException) {
                         try {
                             _directIn = new InputStreamReader(recvSocket.getInputStream());
                             bufferedIn = new BufferedReader(_directIn);
@@ -549,9 +546,6 @@ public class MainActivity extends AppCompatActivity {
                             return;
                         }
                     }
-                }
-                 catch (PackageLossException e) {
-                    e.printStackTrace();
                 }
             }
         }
