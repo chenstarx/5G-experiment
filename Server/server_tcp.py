@@ -2,9 +2,9 @@ import time
 import socket
 import datetime
 import threading
-from pymongo import MongoClient
+# from pymongo import MongoClient
 
-client = MongoClient()
+# client = MongoClient()
 production_env = False
 host = "0.0.0.0"
 port_recv = 55800
@@ -24,6 +24,7 @@ class SendBackThread(threading.Thread):
     def __init__(self, socket_inst):
         threading.Thread.__init__(self)
         self.mySocket = socket_inst
+
         self.mySocket.settimeout(120)
 
     def send_msg(self, index_send, server_time_start, time_initial):
@@ -41,6 +42,7 @@ class myThread(threading.Thread):
         threading.Thread.__init__(self)
         self.time = time
         self.mySocket = socketInstance
+        self.iostream = self.mySocket.makefile('r')
         self.mySocket.settimeout(120)
 
     def run(self):
@@ -54,15 +56,16 @@ class myThread(threading.Thread):
             global dataFlag
 
             try:
-                rawData = self.mySocket.recv(8192).decode()
+                # rawData = self.mySocket.recv(1024).decode()
+                rawData = self.iostream.readline()
                 server_time_start = time.time()  # record start time
-                print("recv: " + rawData) if not production_env else None
+                print("recv: \'", rawData, '\'') if not production_env else None
 
                 From = rawData.replace(";", ":").split(": ")
 
                 if "Phone" in From:
 
-                    rawData = rawData.split("\r\n")[0]
+                    rawData = rawData.split("\n")[0]
 
                     for dataItem in [rawData]:
 
@@ -111,17 +114,6 @@ class myThread(threading.Thread):
                             if Latitude != "":
                                 dbData['Latitude'] = Latitude
 
-
-
-
-
-
-
-
-
-
-
-
                             if Longitude != "":
                                 dbData['Longitude'] = Longitude
                             if Temperature != "":
@@ -148,6 +140,8 @@ class myThread(threading.Thread):
                                     newSend.send_msg(index_send, server_time_start, time_initial)
 
                             else:
+                                print("did not trigger send-back")
+                                print("data: ", dbData)
                                 dataTemp = dataItem
                                 dataFlag = True
 
