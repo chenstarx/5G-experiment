@@ -80,13 +80,13 @@ public class MainActivity extends AppCompatActivity {
     SensorManager sensorManager;
     LocationManager locationManager;
 
-    
+
     String networkType = "Unknown";
-    
-    final String IP = "192.168.0.4";
+
+    final String IP = "202.182.116.230";
     private static final int clientSendPort = 55800;
     private static final int clientRecvPort = 55801;
-    
+
     int dbm = -113;
     int sendNum = 0;
     int recvIndex = 0;
@@ -463,16 +463,28 @@ public class MainActivity extends AppCompatActivity {
 
         DecimalFormat lFormat = new DecimalFormat("0.00000000");
 
+        long sentTimestamp, processDur;
+        int recvIndex;
+
 
         private long calcDurationMillis(String recvData, long recvTime){
-            long sentTimestamp = -1, processDur = -1;
-            int recvIndex = -1;
+            sentTimestamp = -1;
+            processDur = -1;
+            recvIndex = -1;
             // todo: get sent timestamp and index from recvData
             String[] splited = recvData.replace("; ", ": ").replace("\n", "").split(": ");
-
-            recvIndex = Integer.parseInt(splited[1]);
-            processDur = Integer.parseInt(splited[3]);
-            sentTimestamp = Long.parseLong(splited[5]);
+            Logger.getGlobal().log(Level.WARNING, recvData);
+            try{
+                recvIndex = Integer.parseInt(splited[1].replace(" ", ""));
+                processDur = Long.parseLong(splited[3]);
+                sentTimestamp = Long.parseLong(splited[5]);
+            }catch (NumberFormatException | ArrayIndexOutOfBoundsException e){
+                Logger.getGlobal().log(Level.SEVERE, "Error with recv: " + recvData);
+                sentTimestamp = -1;
+                processDur = -1;
+                recvIndex = -1;
+                return -1;
+            }
 
 
             long[] item = awaitRecvBackList.poll();
@@ -485,18 +497,10 @@ public class MainActivity extends AppCompatActivity {
         }
 
         private long getServerProcessDuration(String recvData){
-            long processDur = -1;
-            // todo: get sent timestamp and index from recvData
-            String[] splited = recvData.replace("; ", ": ").replace("\n", "").split(": ");
-            processDur = Integer.parseInt(splited[3]);
             return processDur;
         }
 
         private long getRecvIndex(String recvData){
-            long recvIndex = -1;
-            // todo: get sent timestamp and index from recvData
-            String[] splited = recvData.replace("; ", ": ").replace("\n", "").split(": ");
-            recvIndex = Long.parseLong(splited[1]);
             return recvIndex;
         }
 
@@ -538,6 +542,9 @@ public class MainActivity extends AppCompatActivity {
 //                    e.printStackTrace();
                     if (e instanceof SocketException) {
                         try {
+                            if (recvSocket == null){
+                                continue;
+                            }
                             _directIn = new InputStreamReader(recvSocket.getInputStream());
                             bufferedIn = new BufferedReader(_directIn);
 
@@ -608,107 +615,110 @@ public class MainActivity extends AppCompatActivity {
                     MainTask = new TimerTask() {
                         @Override
                         public void run() {
-                        sendNum ++;
+                            sendNum ++;
 
-                        String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; abstime: " + System.currentTimeMillis() + "; CSQ: " + Integer.toString(dbm)
-                                + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: "
-                                + lFormat.format(longitude) + "; Index: " + Integer.toString(sendNum)
-                                + "; Network: "+ networkType +  " \r\n";
+                            String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; abstime: " + System.currentTimeMillis() + "; CSQ: " + String.format("%-5d", dbm)
+                                    + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: "
+                                    + lFormat.format(longitude) + "; Index: " + String.format("%-6d", sendNum)
+                                    + "; Network: "+ String.format("%-20s", networkType) +  " \n";  // removed \r
 
-                        fileWrite(MyFileName, message);
 
-                        message = "From: Phone; " + message;
+                            fileWrite(MyFileName, message);
 
-                        Message msg = Message.obtain();
+                            message = "From: Phone; " + message;
 
-                        try {
+                            Message msg = Message.obtain();
 
-                            if (sendSocket != null) {
+//                        message = String.format("%-200s", message);
 
-                                outputStream = sendSocket.getOutputStream();
+                            try {
 
-                                outputStream.write(message.getBytes("utf-8"));
+                                if (sendSocket != null) {
 
-                                outputStream.flush();
+                                    outputStream = sendSocket.getOutputStream();
 
-                                msg.what = 0x03;
-                                MainHandler.sendMessage(msg);
+                                    outputStream.write(message.getBytes("utf-8"));
 
-                                long[] awaitItem = {
-                                        sendNum,
-                                        System.currentTimeMillis()
-                                };
+                                    outputStream.flush();
 
-                                awaitRecvBackList.putFirst(awaitItem);
+                                    msg.what = 0x03;
+                                    MainHandler.sendMessage(msg);
 
-                            } else {
+                                    long[] awaitItem = {
+                                            sendNum,
+                                            System.currentTimeMillis()
+                                    };
 
-                                try {
-                                    socketCounter ++;
+                                    awaitRecvBackList.putFirst(awaitItem);
 
-                                    if (socketCounter > 100) {
+                                } else {
 
-                                        socketCounter = 0;
+                                    try {
+                                        socketCounter ++;
 
-                                        sendSocket = new Socket(IP, clientSendPort);
+                                        if (socketCounter > 100) {
 
-                                        msg.what = 0x01;
-                                        MainHandler.sendMessage(msg);
+                                            socketCounter = 0;
 
-                                        BtnSendFlag = true;
+                                            sendSocket = new Socket(IP, clientSendPort);
 
-                                    } else {
+                                            msg.what = 0x01;
+                                            MainHandler.sendMessage(msg);
+
+                                            BtnSendFlag = true;
+
+                                        } else {
+
+                                            msg.what = 0x06;
+
+                                            MainHandler.sendMessage(msg);
+                                        }
+
+                                    } catch (IOException e) {
 
                                         msg.what = 0x06;
 
                                         MainHandler.sendMessage(msg);
-                                    }
 
-                                } catch (IOException e) {
-
-                                    msg.what = 0x06;
-
-                                    MainHandler.sendMessage(msg);
-
-                                    if (sendSocket != null) {
-                                        try {
-                                            sendSocket.close();
-                                        } catch (IOException eb) {
-                                            eb.printStackTrace();
+                                        if (sendSocket != null) {
+                                            try {
+                                                sendSocket.close();
+                                            } catch (IOException eb) {
+                                                eb.printStackTrace();
+                                            }
+                                            sendSocket = null;
                                         }
-                                        sendSocket = null;
+
                                     }
-
                                 }
-                            }
 
-                        } catch (Exception e) {
-                            //Connection Break Because of Network Error
-                            if (BtnSendFlag) BtnSendFlag = false;
+                            } catch (Exception e) {
+                                //Connection Break Because of Network Error
+                                if (BtnSendFlag) BtnSendFlag = false;
 
-                            if (outputStream != null) {
-                                try {
-                                    outputStream.close();
-                                } catch (IOException ea) {
-                                    ea.printStackTrace();
+                                if (outputStream != null) {
+                                    try {
+                                        outputStream.close();
+                                    } catch (IOException ea) {
+                                        ea.printStackTrace();
+                                    }
+                                    outputStream = null;
                                 }
-                                outputStream = null;
-                            }
 
-                            if (sendSocket != null) {
-                                try {
-                                    sendSocket.close();
-                                } catch (IOException eb) {
-                                    eb.printStackTrace();
+                                if (sendSocket != null) {
+                                    try {
+                                        sendSocket.close();
+                                    } catch (IOException eb) {
+                                        eb.printStackTrace();
+                                    }
+                                    sendSocket = null;
                                 }
-                                sendSocket = null;
+
+                                msg.what = 0x05;
+                                MainHandler.sendMessage(msg);
+
+                                e.printStackTrace();
                             }
-
-                            msg.what = 0x05;
-                            MainHandler.sendMessage(msg);
-
-                            e.printStackTrace();
-                        }
                         }
                     };
                     MainTimer.schedule(MainTask, 0, 5);
