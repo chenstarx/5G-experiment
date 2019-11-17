@@ -6,10 +6,10 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
-import android.location.Criteria;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.PowerManager;
@@ -25,14 +25,19 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.os.Message;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.lang.reflect.Field;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.Socket;
+import java.net.SocketException;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.Locale;
@@ -40,6 +45,9 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 
 public class MainActivity extends AppCompatActivity {
@@ -48,11 +56,16 @@ public class MainActivity extends AppCompatActivity {
     MyPhoneStateListener MyListener;
 
     Button BtnConnect, BtnSend, BtnClose, BtnSendU;
-    TextView MyTextView, TcpStatus, TcpSend, UdpSend, LatiView, LongView;
+    TextView MyTextView, TcpStatus, TcpSend, UdpSend, LatiView, LongView, netStateView;
 
-    Socket socket;
+    Socket sendSocket, recvSocket;
     DatagramSocket UDPsocket;
     ExecutorService MyThreadPool;
+
+    LinkedBlockingDeque<long[]> awaitRecvBackList = new LinkedBlockingDeque<>();
+    public final static int awaitIndex = 0;
+    public final static int awaitProcessDur = 1;
+
 
     OutputStream outputStream;
 
@@ -67,9 +80,18 @@ public class MainActivity extends AppCompatActivity {
     SensorManager sensorManager;
     LocationManager locationManager;
 
+
+    String networkType = "Unknown";
+
+    final String IP = "202.182.116.230";
+    private static final int clientSendPort = 55800;
+    private static final int clientRecvPort = 55801;
+
     int dbm = -113;
     int sendNum = 0;
+    int recvIndex = 0;
     int UsendNum = 0;
+    long durationMillis = 0;
 
     int socketCounter = 0;
 
@@ -81,10 +103,12 @@ public class MainActivity extends AppCompatActivity {
     boolean BtnSendFlag = false;
     boolean BtnSendUFlag = false;
 
-    @SuppressLint("MissingPermission")
+
+    @SuppressLint({"MissingPermission", "InvalidWakeLockTag"})
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Logger.getGlobal().log(Level.INFO, "Init into creation");
         setContentView(R.layout.activity_main);
 
         MyThreadPool = Executors.newCachedThreadPool();
@@ -99,6 +123,7 @@ public class MainActivity extends AppCompatActivity {
         BtnSend = findViewById(R.id.send);
         BtnClose = findViewById(R.id.close);
         BtnSendU = findViewById(R.id.usend);
+        netStateView = findViewById(R.id.netstate);
 
         MyTelephonyManager = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
 
@@ -118,9 +143,9 @@ public class MainActivity extends AppCompatActivity {
 
         powerManager = (PowerManager) getSystemService(POWER_SERVICE);
 
-        sensorManager = (SensorManager)getSystemService(Context.SENSOR_SERVICE);
+        sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
 
-        locationManager = (LocationManager)getSystemService(Context.LOCATION_SERVICE);
+        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
 
         wakeLock = powerManager != null ? powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MainWakelock") : null;
 
@@ -129,6 +154,8 @@ public class MainActivity extends AppCompatActivity {
         locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 100, 0, locationListener);
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+
 
     }
 
@@ -144,6 +171,7 @@ public class MainActivity extends AppCompatActivity {
                     break;
                 case 0x02:
                     MyTextView.setText((Integer.toString(dbm) + "dBm"));
+                    netStateView.setText(IP + ", " + networkType);
                     break;
                 case 0x03:
                     BtnSend.setText(("<ON> TCP SEND"));
@@ -192,7 +220,7 @@ public class MainActivity extends AppCompatActivity {
 
             if (initCounter < 10 && !initFlag) {
 
-                initHeight += 44330000*(1-(Math.pow((Double.parseDouble(dFormat.format(event.values[0]))/1013.25), (float)1.0/5255.0)));
+                initHeight += 44330000*(1 - ( Math.pow ( ( Double.parseDouble(dFormat.format(event.values[0]))/1013.25), (float) 1.0/5255.0 )));
 
                 initCounter ++;
 
@@ -208,7 +236,7 @@ public class MainActivity extends AppCompatActivity {
 
             if (initFlag) {
 
-                height = 44330000*(1-(Math.pow((Double.parseDouble(dFormat.format(event.values[0]))/1013.25), (float)1.0/5255.0)));
+                height = 44330000 * ( 1 - (Math.pow((Double.parseDouble(dFormat.format(event.values[0]))/1013.25), (float)1.0/5255.0)));
 
                 height -= initHeight;
 
@@ -259,6 +287,51 @@ public class MainActivity extends AppCompatActivity {
     };
 
 
+    public String getNetworkClass() {
+//        TelephonyManager mTelephonyManager = (TelephonyManager)
+//                getSystemService(Context.TELEPHONY_SERVICE);
+        int networkType = MyTelephonyManager.getNetworkType();
+        switch (networkType) {
+            case TelephonyManager.NETWORK_TYPE_GPRS:
+            case TelephonyManager.NETWORK_TYPE_EDGE:
+            case TelephonyManager.NETWORK_TYPE_CDMA:
+            case TelephonyManager.NETWORK_TYPE_1xRTT:
+            case TelephonyManager.NETWORK_TYPE_IDEN:
+                return "2G";
+            case TelephonyManager.NETWORK_TYPE_UMTS:
+            case TelephonyManager.NETWORK_TYPE_EVDO_0:
+            case TelephonyManager.NETWORK_TYPE_EVDO_A:
+            case TelephonyManager.NETWORK_TYPE_HSDPA:
+            case TelephonyManager.NETWORK_TYPE_HSUPA:
+            case TelephonyManager.NETWORK_TYPE_HSPA:
+            case TelephonyManager.NETWORK_TYPE_EVDO_B:
+            case TelephonyManager.NETWORK_TYPE_EHRPD:
+            case TelephonyManager.NETWORK_TYPE_HSPAP:
+                return "3G";
+            case TelephonyManager.NETWORK_TYPE_LTE:
+                return "4G";
+            case TelephonyManager.NETWORK_TYPE_UNKNOWN:  // no TYPE_NR provided for this version of Android SDK
+                if (Build.VERSION.SDK_INT < 29){
+                    return "5G or Unknown";
+                }else {
+                    return "Unknown";
+                }
+            default:
+                if (Build.VERSION.SDK_INT >= 29){
+                    try{
+                        Field vfield = TelephonyManager.class.getField("NETWORK_TYPE_NR");
+                        int field = vfield.getInt(null);
+                        if (networkType == field){
+                            return "5G";
+                        }
+                    }catch (NoSuchFieldException | IllegalAccessException e){
+                        Logger.getGlobal().log(Level.SEVERE, "5G inspection failed under SDK 29 or higher. Should\'nt happen");
+                    }
+                }
+                return "Unknown";
+        }
+    }
+
     public class MyPhoneStateListener extends PhoneStateListener {
         @Override
         public void onSignalStrengthsChanged (SignalStrength signalStrength) {
@@ -268,6 +341,8 @@ public class MainActivity extends AppCompatActivity {
             Message msg = Message.obtain();
 
             try {
+                String networkClass = getNetworkClass();
+                networkType = networkClass;
                 dbm = (Integer) signalStrength.getClass().getMethod("getDbm").invoke(signalStrength);
                 /* The one-line code above equals to
                 Method theMethod = null;
@@ -289,7 +364,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public class SocketSend implements OnClickListener {
-        public void onClick(View v) { new Thread(new SendThread()).start(); }
+        public void onClick(View v) { new Thread(new SendThread()).start(); new Thread(new RecvThread()).start(); }
     }
 
     public class SocketSendU implements OnClickListener {
@@ -320,11 +395,15 @@ public class MainActivity extends AppCompatActivity {
                     outputStream = null;
                 }
 
-                if (socket != null) {
+                if (sendSocket != null) {
 
-                    socket.close();
+                    sendSocket.close();
 
-                    socket = null;
+                    sendSocket = null;
+                }
+                if (recvSocket != null){
+                    recvSocket.close();
+                    recvSocket = null;
                 }
 
                 if (BtnSendFlag) {
@@ -340,30 +419,155 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+
+
     public class ConnectThread implements Runnable {
         @Override
         public void run() {
             Message msg = Message.obtain();
             try {
 
-                if (socket == null) {
+                if (sendSocket == null) {
 
-                    socket = new Socket("101.132.97.148", 7670);
+                    sendSocket = new Socket(IP, clientSendPort);
+                    Logger.getGlobal().log(Level.INFO, "send Socket Success");
 
                     msg.what = 0x01;
                     MainHandler.sendMessage(msg);
 
                 }
+
+                if (recvSocket == null) {
+                    recvSocket = new Socket(IP, clientRecvPort);
+                    Logger.getGlobal().log(Level.INFO, "send Socket Success");
+                }
+
             } catch (IOException e) {
                 msg.what = 0x06;
                 MainHandler.sendMessage(msg);
+
 
                 e.printStackTrace();
             }
         }
     }
 
+    public class RecvThread implements Runnable {
+        SimpleDateFormat tFormatFile = new SimpleDateFormat("yyyy-MM-dd HHmm", Locale.CHINA);
+
+        SimpleDateFormat tFormat = new SimpleDateFormat("HH:mm:ss", Locale.CHINA);
+
+        String MyFileName = tFormatFile.format(System.currentTimeMillis()) + "-RecvCallback.txt";
+
+        DecimalFormat dFormat = new DecimalFormat("0.00");
+
+        DecimalFormat lFormat = new DecimalFormat("0.00000000");
+
+        long sentTimestamp, processDur;
+        int recvIndex;
+
+
+        private long calcDurationMillis(String recvData, long recvTime){
+            sentTimestamp = -1;
+            processDur = -1;
+            recvIndex = -1;
+            // todo: get sent timestamp and index from recvData
+            String[] splited = recvData.replace("; ", ": ").replace("\n", "").split(": ");
+            Logger.getGlobal().log(Level.WARNING, recvData);
+            try{
+                recvIndex = Integer.parseInt(splited[1].replace(" ", ""));
+                processDur = Long.parseLong(splited[3]);
+                sentTimestamp = Long.parseLong(splited[5]);
+            }catch (NumberFormatException | ArrayIndexOutOfBoundsException e){
+                Logger.getGlobal().log(Level.SEVERE, "Error with recv: " + recvData);
+                sentTimestamp = -1;
+                processDur = -1;
+                recvIndex = -1;
+                return -1;
+            }
+
+
+            long[] item = awaitRecvBackList.poll();
+            if (item == null){
+                return 0;
+            }
+            long itemIndex = item[awaitIndex];
+
+            return recvTime - processDur - sentTimestamp;
+        }
+
+        private long getServerProcessDuration(String recvData){
+            return processDur;
+        }
+
+        private long getRecvIndex(String recvData){
+            return recvIndex;
+        }
+
+        @Override
+        public void run() {
+            InputStreamReader _directIn = null;
+            BufferedReader bufferedIn= null;
+            try {
+                _directIn = new InputStreamReader(recvSocket.getInputStream());
+                bufferedIn = new BufferedReader(_directIn);
+
+            } catch (IOException e) {
+                e.printStackTrace();
+                return;
+            }
+
+
+            while (true){
+                try {
+                    String recvData = bufferedIn.readLine();  // todo: check maybe-wrong: buffere invalid
+                    long receivedTimestamp = System.currentTimeMillis();
+                    if (recvData == null){
+                        Logger.getGlobal().log(Level.WARNING, "Null recv");
+                        continue;
+                    }
+//                    Logger.getGlobal().log(Level.INFO, recvData);
+
+
+                    durationMillis = calcDurationMillis(recvData, receivedTimestamp);
+                    String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; CSQ: " + Integer.toString(dbm)
+                            + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: "
+                            + lFormat.format(longitude) + "; Index: " + getRecvIndex(recvData)
+                            + ", Network: "+ networkType + ", ProcessDur: " + getServerProcessDuration(recvData) + ", durationTwoWay: " + durationMillis +  "\r\n";
+
+                    fileWrite(MyFileName, message);
+                    Logger.getGlobal().log(Level.INFO, message);
+
+                } catch (IOException e) {
+//                    e.printStackTrace();
+                    if (e instanceof SocketException) {
+                        try {
+                            if (recvSocket == null){
+                                continue;
+                            }
+                            _directIn = new InputStreamReader(recvSocket.getInputStream());
+                            bufferedIn = new BufferedReader(_directIn);
+
+                        } catch (IOException ioe) {
+                            e.printStackTrace();
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        private class PackageLossException extends Exception {
+            public PackageLossException(String message) {
+                super(message);
+            }
+        }
+    }
+
+
     public class SendThread implements Runnable {
+
+        // make timestamp string in init level
 
         SimpleDateFormat tFormatFile = new SimpleDateFormat("yyyy-MM-dd HHmm", Locale.CHINA);
 
@@ -378,7 +582,7 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void run() {
 
-            if (socket != null) {
+            if (sendSocket != null) {
 
                 if (BtnSendFlag) {
 
@@ -411,99 +615,110 @@ public class MainActivity extends AppCompatActivity {
                     MainTask = new TimerTask() {
                         @Override
                         public void run() {
-                        sendNum ++;
+                            sendNum ++;
 
-                        String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; CSQ: " + Integer.toString(dbm)
-                                + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: "
-                                + lFormat.format(longitude) + "; Index: " + Integer.toString(sendNum) + "\r\n";
+                            String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; abstime: " + System.currentTimeMillis() + "; CSQ: " + String.format("%-5d", dbm)
+                                    + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: "
+                                    + lFormat.format(longitude) + "; Index: " + String.format("%-6d", sendNum)
+                                    + "; Network: "+ String.format("%-20s", networkType) +  " \n";  // removed \r
 
-                        fileWrite(MyFileName, message);
 
-                        message = "From: Phone; " + message;
+                            fileWrite(MyFileName, message);
 
-                        Message msg = Message.obtain();
+                            message = "From: Phone; " + message;
 
-                        try {
+                            Message msg = Message.obtain();
 
-                            if (socket != null) {
+//                        message = String.format("%-200s", message);
 
-                                outputStream = socket.getOutputStream();
+                            try {
 
-                                outputStream.write(message.getBytes("utf-8"));
+                                if (sendSocket != null) {
 
-                                outputStream.flush();
+                                    outputStream = sendSocket.getOutputStream();
 
-                                msg.what = 0x03;
-                                MainHandler.sendMessage(msg);
+                                    outputStream.write(message.getBytes("utf-8"));
 
-                            } else {
+                                    outputStream.flush();
 
-                                try {
-                                    socketCounter ++;
+                                    msg.what = 0x03;
+                                    MainHandler.sendMessage(msg);
 
-                                    if (socketCounter > 100) {
+                                    long[] awaitItem = {
+                                            sendNum,
+                                            System.currentTimeMillis()
+                                    };
 
-                                        socketCounter = 0;
+                                    awaitRecvBackList.putFirst(awaitItem);
 
-                                        socket = new Socket("101.132.97.148", 7670);
+                                } else {
 
-                                        msg.what = 0x01;
-                                        MainHandler.sendMessage(msg);
+                                    try {
+                                        socketCounter ++;
 
-                                        BtnSendFlag = true;
+                                        if (socketCounter > 100) {
 
-                                    } else {
+                                            socketCounter = 0;
+
+                                            sendSocket = new Socket(IP, clientSendPort);
+
+                                            msg.what = 0x01;
+                                            MainHandler.sendMessage(msg);
+
+                                            BtnSendFlag = true;
+
+                                        } else {
+
+                                            msg.what = 0x06;
+
+                                            MainHandler.sendMessage(msg);
+                                        }
+
+                                    } catch (IOException e) {
 
                                         msg.what = 0x06;
 
                                         MainHandler.sendMessage(msg);
-                                    }
 
-                                } catch (IOException e) {
-
-                                    msg.what = 0x06;
-
-                                    MainHandler.sendMessage(msg);
-
-                                    if (socket != null) {
-                                        try {
-                                            socket.close();
-                                        } catch (IOException eb) {
-                                            eb.printStackTrace();
+                                        if (sendSocket != null) {
+                                            try {
+                                                sendSocket.close();
+                                            } catch (IOException eb) {
+                                                eb.printStackTrace();
+                                            }
+                                            sendSocket = null;
                                         }
-                                        socket = null;
+
                                     }
-
                                 }
-                            }
 
-                        } catch (Exception e) {
-                            //Connection Break Because of Network Error
-                            if (BtnSendFlag) BtnSendFlag = false;
+                            } catch (Exception e) {
+                                //Connection Break Because of Network Error
+                                if (BtnSendFlag) BtnSendFlag = false;
 
-                            if (outputStream != null) {
-                                try {
-                                    outputStream.close();
-                                } catch (IOException ea) {
-                                    ea.printStackTrace();
+                                if (outputStream != null) {
+                                    try {
+                                        outputStream.close();
+                                    } catch (IOException ea) {
+                                        ea.printStackTrace();
+                                    }
+                                    outputStream = null;
                                 }
-                                outputStream = null;
-                            }
 
-                            if (socket != null) {
-                                try {
-                                    socket.close();
-                                } catch (IOException eb) {
-                                    eb.printStackTrace();
+                                if (sendSocket != null) {
+                                    try {
+                                        sendSocket.close();
+                                    } catch (IOException eb) {
+                                        eb.printStackTrace();
+                                    }
+                                    sendSocket = null;
                                 }
-                                socket = null;
+
+                                msg.what = 0x05;
+                                MainHandler.sendMessage(msg);
+
+                                e.printStackTrace();
                             }
-
-                            msg.what = 0x05;
-                            MainHandler.sendMessage(msg);
-
-                            e.printStackTrace();
-                        }
                         }
                     };
                     MainTimer.schedule(MainTask, 0, 5);
@@ -561,7 +776,7 @@ public class MainActivity extends AppCompatActivity {
 
                         String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; CSQ: " + Integer.toString(dbm)
                                 + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: "
-                                + lFormat.format(longitude) + "; Index: " + Integer.toString(UsendNum) + "\r\n";
+                                + lFormat.format(longitude) + "; Index: " + Integer.toString(UsendNum) + ", Network: "+ networkType +  "\r\n";
 
                         fileWrite(MyFileName, message);
 
