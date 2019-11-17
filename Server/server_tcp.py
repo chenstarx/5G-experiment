@@ -2,23 +2,16 @@ import time
 import socket
 import datetime
 import threading
-# from pymongo import MongoClient
+from pymongo import MongoClient
 
-# client = MongoClient()
-production_env = False
+client = MongoClient()
+production_env = True
 host = "0.0.0.0"
 port_recv = 55800
 port_send = 55801
 
-Latitude = ""
-Longitude = ""
-Temperature = ""
-Height = ""
 dataTemp = ""
 dataFlag = False
-
-isModule = False
-
 
 class SendBackThread(threading.Thread):
     def __init__(self, socket_inst):
@@ -37,7 +30,7 @@ class SendBackThread(threading.Thread):
         # socket.write("") -> self.mySocket.sendall(bytes(message, 'utf-8'))
 
 
-class myThread(threading.Thread):
+class ReceiveThread(threading.Thread):
     def __init__(self, socketInstance, time):
         threading.Thread.__init__(self)
         self.time = time
@@ -48,10 +41,6 @@ class myThread(threading.Thread):
     def run(self):
 
         while True:
-            global Latitude
-            global Longitude
-            global Temperature
-            global Height
             global dataTemp
             global dataFlag
 
@@ -111,17 +100,6 @@ class myThread(threading.Thread):
                                         if (items[0] == "Network"):
                                             dbData['Network'] = items[1]
 
-                            if Latitude != "":
-                                dbData['Latitude'] = Latitude
-
-                            if Longitude != "":
-                                dbData['Longitude'] = Longitude
-                            if Temperature != "":
-                                dbData['Temperature'] = Temperature
-                            if Height != "":
-                                dbData['Height'] = Height
-                            # print(dbData)
-
                             if (("Time" in dbData) and ("CSQ" in dbData) and ("Index" in dbData) and (
                                     "Height" in dbData) and ("Network" in dbData)):
                                 if production_env:
@@ -144,30 +122,6 @@ class myThread(threading.Thread):
                                 print("data: ", dbData)
                                 dataTemp = dataItem
                                 dataFlag = True
-
-                if "Module" in From:
-
-                    isModule = True
-
-                    data = rawData.split("; ")
-
-                    for item in data:
-
-                        items = item.split(": ")
-
-                        if len(items) == 2:
-
-                            if (items[0] == "Latitude" and items[1] != ""):
-                                Latitude = items[1]
-
-                            if (items[0] == "Longitude" and items[1] != ""):
-                                Longitude = items[1]
-
-                            if (items[0] == "Temperature" and items[1] != ""):
-                                Temperature = items[1]
-
-                            if (items[0] == "Height" and items[1] != ""):
-                                Height = items[1]
 
                 if rawData == "":
                     self.mySocket.shutdown(2)
@@ -223,5 +177,5 @@ while True:
     currentTime = dt.strftime('%m-%d %H:%M')
 
     print("incoming connection from: ", addr, "\n")
-    newThread = myThread(conn, currentTime)
+    newThread = ReceiveThread(conn, currentTime)
     newThread.start()
