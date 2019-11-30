@@ -81,11 +81,11 @@ public class MainActivity extends AppCompatActivity {
 
     String networkType = "Unknown";
 
-    final String IP = "192.168.0.4";
+    // final String IP = "192.168.0.4";
+    final String IP = "101.132.97.148";
+
     private static final int clientSendPort = 55800;
     private static final int clientRecvPort = 55801;
-
-    boolean permissionGranted = false;
 
     int dbm = -113;
     int sendNum = 0;
@@ -98,6 +98,7 @@ public class MainActivity extends AppCompatActivity {
 
     double latitude = 0.0;
     double longitude = 0.0;
+    double speed = 0.0;
 
     boolean BtnSendFlag = false;
     boolean BtnSendUFlag = false;
@@ -168,7 +169,6 @@ public class MainActivity extends AppCompatActivity {
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        this.permissionGranted = true;
     }
 
     public Handler MainHandler = new Handler(new Handler.Callback() {
@@ -297,7 +297,7 @@ public class MainActivity extends AppCompatActivity {
 
             LongView.setText((Double.toString(longitude)));
 
-            SpeedView.setText(String.format("Speed: %.1a m/s", speed));
+            SpeedView.setText(String.format("Speed: %.2a m/s", speed));
 
         }
     };
@@ -470,8 +470,8 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void run() {
-            InputStreamReader directIn;
-            BufferedReader bufferedIn;
+            InputStreamReader directIn = null;
+            BufferedReader bufferedIn = null;
 
             try {
                 directIn = new InputStreamReader(recvSocket.getInputStream());
@@ -482,6 +482,9 @@ public class MainActivity extends AppCompatActivity {
 
             while (true){
                 try {
+                    if (bufferedIn == null || recvSocket == null){
+                        throw new IOException();
+                    }
 
                     String recvData = bufferedIn.readLine();  // todo: check maybe-wrong: buffere invalid
 
@@ -596,8 +599,8 @@ public class MainActivity extends AppCompatActivity {
                             long currentTime = System.currentTimeMillis();
 
                             String message = "Time: " + tFormat.format(currentTime) + "; Timestamp: " + Long.toString(currentTime) + "; CSQ: " + Integer.toString(dbm)
-                                    + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: "
-                                    + lFormat.format(longitude) + "; Index: " + Integer.toString(sendNum) + "; Network: "+ networkType +  "\r\n";
+                                    + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: " + lFormat.format(longitude)
+                                    + "; Index: " + Integer.toString(sendNum) + "; Speed: " + dFormat.format(speed) + "; Network: "+ networkType +  "\r\n";
 
                             fileWrite(MyFileName, message);
 
@@ -740,8 +743,8 @@ public class MainActivity extends AppCompatActivity {
                         Message msg = Message.obtain();
 
                         String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; CSQ: " + Integer.toString(dbm)
-                                + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: "
-                                + lFormat.format(longitude) + "; Index: " + Integer.toString(UsendNum) + "; Network: "+ networkType +  "\r\n";
+                                + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: " + lFormat.format(longitude) 
+                                + "; Speed: " + dFormat.format(speed) + "; Index: " + Integer.toString(UsendNum) + "; Network: "+ networkType +  "\r\n";
 
                         fileWrite(MyFileName, message);
 
