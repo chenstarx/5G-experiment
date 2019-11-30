@@ -56,7 +56,7 @@ public class MainActivity extends AppCompatActivity {
     MyPhoneStateListener MyListener;
 
     Button BtnConnect, BtnSend, BtnClose, BtnSendU;
-    TextView MyTextView, TcpStatus, TcpSend, UdpSend, LatiView, LongView, netStateView;
+    TextView MyTextView, TcpStatus, TcpSend, UdpSend, LatiView, LongView, netStateView, SpeedView;
 
     Socket sendSocket, recvSocket;
     DatagramSocket UDPsocket;
@@ -83,7 +83,7 @@ public class MainActivity extends AppCompatActivity {
 
     String networkType = "Unknown";
 
-    final String IP = "202.182.116.230";
+    final String IP = "192.168.0.4";
     private static final int clientSendPort = 55800;
     private static final int clientRecvPort = 55801;
 
@@ -99,7 +99,8 @@ public class MainActivity extends AppCompatActivity {
 
     double latitude = 0.0;
     double longitude = 0.0;
-
+    double speed = 0.0;
+    /**/
     boolean BtnSendFlag = false;
     boolean BtnSendUFlag = false;
 
@@ -115,6 +116,7 @@ public class MainActivity extends AppCompatActivity {
 
         MyTextView = findViewById(R.id.dbm);
         LatiView = findViewById(R.id.latitude);
+        SpeedView = findViewById(R.id.speed);
         LongView = findViewById(R.id.longitude);
         TcpStatus = findViewById(R.id.status);
         TcpSend = findViewById(R.id.sendnum);
@@ -279,9 +281,13 @@ public class MainActivity extends AppCompatActivity {
 
             longitude = location.getLongitude();
 
+            speed = location.getSpeed();
+
             LatiView.setText((Double.toString(latitude)));
 
             LongView.setText((Double.toString(longitude)));
+
+            SpeedView.setText(String.format("Speed: %.1a m/s"));
 
         }
     };
@@ -439,7 +445,7 @@ public class MainActivity extends AppCompatActivity {
 
                 if (recvSocket == null) {
                     recvSocket = new Socket(IP, clientRecvPort);
-                    Logger.getGlobal().log(Level.INFO, "send Socket Success");
+                    Logger.getGlobal().log(Level.INFO, "recv Socket Success");
                 }
 
             } catch (IOException e) {
@@ -531,20 +537,20 @@ public class MainActivity extends AppCompatActivity {
 
                     durationMillis = calcDurationMillis(recvData, receivedTimestamp);
                     String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; CSQ: " + Integer.toString(dbm)
-                            + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: "
+                            + "; Height: " + dFormat.format(height) + "; Speed: " + dFormat.format(speed) + "; Lati: " + lFormat.format(latitude) + "; Long: "
                             + lFormat.format(longitude) + "; Index: " + getRecvIndex(recvData)
                             + ", Network: "+ networkType + ", ProcessDur: " + getServerProcessDuration(recvData) + ", durationTwoWay: " + durationMillis +  "\r\n";
-
                     fileWrite(MyFileName, message);
                     Logger.getGlobal().log(Level.INFO, message);
-
                 } catch (IOException e) {
-//                    e.printStackTrace();
+                    e.printStackTrace();
                     if (e instanceof SocketException) {
                         try {
                             if (recvSocket == null){
                                 continue;
                             }
+                            bufferedIn.close();
+                            _directIn.close();
                             _directIn = new InputStreamReader(recvSocket.getInputStream());
                             bufferedIn = new BufferedReader(_directIn);
 
@@ -617,10 +623,9 @@ public class MainActivity extends AppCompatActivity {
                         public void run() {
                             sendNum ++;
 
-                            String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; abstime: " + System.currentTimeMillis() + "; CSQ: " + String.format("%-5d", dbm)
-                                    + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: "
-                                    + lFormat.format(longitude) + "; Index: " + String.format("%-6d", sendNum)
-                                    + "; Network: "+ String.format("%-20s", networkType) +  " \n";  // removed \r
+                            String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; abstime: " + System.currentTimeMillis() + "; CSQ: " + Integer.toString(dbm)
+                                    + "; Height: " + dFormat.format(height)+ "; Speed: " + dFormat.format(speed) + "; Lati: " + lFormat.format(latitude) + "; Long: "
+                                    + lFormat.format(longitude) + "; Index: " + Integer.toString(sendNum) + "; Network: "+ networkType +  " \n";  // removed \r
 
 
                             fileWrite(MyFileName, message);
@@ -814,7 +819,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    void fileWrite(String fileName, String data) {
+    synchronized void fileWrite(String fileName, String data) {
 
         String filePath = "/mnt/sdcard/surf/";
         String fullFilePath = filePath+fileName;
