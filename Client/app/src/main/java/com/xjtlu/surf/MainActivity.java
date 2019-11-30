@@ -1,5 +1,6 @@
 package com.xjtlu.surf;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.hardware.Sensor;
@@ -14,10 +15,13 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
+import android.support.annotation.NonNull;
+import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.telephony.PhoneStateListener;
 import android.telephony.SignalStrength;
 import android.telephony.TelephonyManager;
+import android.view.Surface;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.WindowManager;
@@ -62,11 +66,6 @@ public class MainActivity extends AppCompatActivity {
     DatagramSocket UDPsocket;
     ExecutorService MyThreadPool;
 
-    LinkedBlockingDeque<long[]> awaitRecvBackList = new LinkedBlockingDeque<>();
-    public final static int awaitIndex = 0;
-    public final static int awaitProcessDur = 1;
-
-
     OutputStream outputStream;
 
     Timer MainTimer;
@@ -80,18 +79,18 @@ public class MainActivity extends AppCompatActivity {
     SensorManager sensorManager;
     LocationManager locationManager;
 
-
     String networkType = "Unknown";
 
     final String IP = "192.168.0.4";
     private static final int clientSendPort = 55800;
     private static final int clientRecvPort = 55801;
 
+    boolean permissionGranted = false;
+
     int dbm = -113;
     int sendNum = 0;
     int recvIndex = 0;
     int UsendNum = 0;
-    long durationMillis = 0;
 
     int socketCounter = 0;
 
@@ -99,11 +98,9 @@ public class MainActivity extends AppCompatActivity {
 
     double latitude = 0.0;
     double longitude = 0.0;
-    double speed = 0.0;
-    /**/
+
     boolean BtnSendFlag = false;
     boolean BtnSendUFlag = false;
-
 
     @SuppressLint({"MissingPermission", "InvalidWakeLockTag"})
     @Override
@@ -111,6 +108,15 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         Logger.getGlobal().log(Level.INFO, "Init into creation");
         setContentView(R.layout.activity_main);
+
+        ActivityCompat.requestPermissions(
+            MainActivity.this,
+            new String[] {
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            }
+        , 1);
 
         MyThreadPool = Executors.newCachedThreadPool();
 
@@ -157,8 +163,12 @@ public class MainActivity extends AppCompatActivity {
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
+    }
 
-
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        this.permissionGranted = true;
     }
 
     public Handler MainHandler = new Handler(new Handler.Callback() {
@@ -287,15 +297,13 @@ public class MainActivity extends AppCompatActivity {
 
             LongView.setText((Double.toString(longitude)));
 
-            SpeedView.setText(String.format("Speed: %.1a m/s"));
+            SpeedView.setText(String.format("Speed: %.1a m/s", speed));
 
         }
     };
 
 
     public String getNetworkClass() {
-//        TelephonyManager mTelephonyManager = (TelephonyManager)
-//                getSystemService(Context.TELEPHONY_SERVICE);
         int networkType = MyTelephonyManager.getNetworkType();
         switch (networkType) {
             case TelephonyManager.NETWORK_TYPE_GPRS:
@@ -317,20 +325,15 @@ public class MainActivity extends AppCompatActivity {
             case TelephonyManager.NETWORK_TYPE_LTE:
                 return "4G";
             case TelephonyManager.NETWORK_TYPE_UNKNOWN:  // no TYPE_NR provided for this version of Android SDK
-                if (Build.VERSION.SDK_INT < 29){
-                    return "5G or Unknown";
-                }else {
-                    return "Unknown";
-                }
+                if (Build.VERSION.SDK_INT < 29) return "5G or Unknown";
+                else return "Unknown";
             default:
-                if (Build.VERSION.SDK_INT >= 29){
+                if (Build.VERSION.SDK_INT >= 29) {
                     try{
                         Field vfield = TelephonyManager.class.getField("NETWORK_TYPE_NR");
                         int field = vfield.getInt(null);
-                        if (networkType == field){
-                            return "5G";
-                        }
-                    }catch (NoSuchFieldException | IllegalAccessException e){
+                        if (networkType == field) return "5G";
+                    } catch (NoSuchFieldException | IllegalAccessException e) {
                         Logger.getGlobal().log(Level.SEVERE, "5G inspection failed under SDK 29 or higher. Should\'nt happen");
                     }
                 }
@@ -347,8 +350,8 @@ public class MainActivity extends AppCompatActivity {
             Message msg = Message.obtain();
 
             try {
-                String networkClass = getNetworkClass();
-                networkType = networkClass;
+                networkType = getNetworkClass();
+
                 dbm = (Integer) signalStrength.getClass().getMethod("getDbm").invoke(signalStrength);
                 /* The one-line code above equals to
                 Method theMethod = null;
@@ -370,7 +373,10 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public class SocketSend implements OnClickListener {
-        public void onClick(View v) { new Thread(new SendThread()).start(); new Thread(new RecvThread()).start(); }
+        public void onClick(View v) {
+            new Thread(new SendThread()).start();
+            new Thread(new RecvThread()).start();
+        }
     }
 
     public class SocketSendU implements OnClickListener {
@@ -407,8 +413,11 @@ public class MainActivity extends AppCompatActivity {
 
                     sendSocket = null;
                 }
+
                 if (recvSocket != null){
+
                     recvSocket.close();
+
                     recvSocket = null;
                 }
 
@@ -425,8 +434,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-
-
     public class ConnectThread implements Runnable {
         @Override
         public void run() {
@@ -434,24 +441,22 @@ public class MainActivity extends AppCompatActivity {
             try {
 
                 if (sendSocket == null) {
-
                     sendSocket = new Socket(IP, clientSendPort);
                     Logger.getGlobal().log(Level.INFO, "send Socket Success");
-
-                    msg.what = 0x01;
-                    MainHandler.sendMessage(msg);
-
                 }
 
                 if (recvSocket == null) {
                     recvSocket = new Socket(IP, clientRecvPort);
-                    Logger.getGlobal().log(Level.INFO, "recv Socket Success");
+                    Logger.getGlobal().log(Level.INFO, "send Socket Success");
                 }
+                
+                // if not enter catch, the sockets are connected
+                msg.what = 0x01;
+                MainHandler.sendMessage(msg);
 
             } catch (IOException e) {
                 msg.what = 0x06;
                 MainHandler.sendMessage(msg);
-
 
                 e.printStackTrace();
             }
@@ -461,119 +466,84 @@ public class MainActivity extends AppCompatActivity {
     public class RecvThread implements Runnable {
         SimpleDateFormat tFormatFile = new SimpleDateFormat("yyyy-MM-dd HHmm", Locale.CHINA);
 
-        SimpleDateFormat tFormat = new SimpleDateFormat("HH:mm:ss", Locale.CHINA);
-
-        String MyFileName = tFormatFile.format(System.currentTimeMillis()) + "-RecvCallback.txt";
-
-        DecimalFormat dFormat = new DecimalFormat("0.00");
-
-        DecimalFormat lFormat = new DecimalFormat("0.00000000");
-
-        long sentTimestamp, processDur;
-        int recvIndex;
-
-
-        private long calcDurationMillis(String recvData, long recvTime){
-            sentTimestamp = -1;
-            processDur = -1;
-            recvIndex = -1;
-            // todo: get sent timestamp and index from recvData
-            String[] splited = recvData.replace("; ", ": ").replace("\n", "").split(": ");
-            Logger.getGlobal().log(Level.WARNING, recvData);
-            try{
-                recvIndex = Integer.parseInt(splited[1].replace(" ", ""));
-                processDur = Long.parseLong(splited[3]);
-                sentTimestamp = Long.parseLong(splited[5]);
-            }catch (NumberFormatException | ArrayIndexOutOfBoundsException e){
-                Logger.getGlobal().log(Level.SEVERE, "Error with recv: " + recvData);
-                sentTimestamp = -1;
-                processDur = -1;
-                recvIndex = -1;
-                return -1;
-            }
-
-
-            long[] item = awaitRecvBackList.poll();
-            if (item == null){
-                return 0;
-            }
-            long itemIndex = item[awaitIndex];
-
-            return recvTime - processDur - sentTimestamp;
-        }
-
-        private long getServerProcessDuration(String recvData){
-            return processDur;
-        }
-
-        private long getRecvIndex(String recvData){
-            return recvIndex;
-        }
+        String MyFileName = tFormatFile.format(System.currentTimeMillis()) + " Recv.txt";
 
         @Override
         public void run() {
-            InputStreamReader _directIn = null;
-            BufferedReader bufferedIn= null;
-            try {
-                _directIn = new InputStreamReader(recvSocket.getInputStream());
-                bufferedIn = new BufferedReader(_directIn);
+            InputStreamReader directIn;
+            BufferedReader bufferedIn;
 
+            try {
+                directIn = new InputStreamReader(recvSocket.getInputStream());
+                bufferedIn = new BufferedReader(directIn);
             } catch (IOException e) {
                 e.printStackTrace();
-                return;
             }
-
 
             while (true){
                 try {
+
                     String recvData = bufferedIn.readLine();  // todo: check maybe-wrong: buffere invalid
-                    long receivedTimestamp = System.currentTimeMillis();
+
+                    double receivedTime = (double) System.currentTimeMillis();
+
                     if (recvData == null){
                         Logger.getGlobal().log(Level.WARNING, "Null recv");
-                        continue;
+                        throw new IOException();
                     }
-//                    Logger.getGlobal().log(Level.INFO, recvData);
 
+                    String[] splited = recvData.replace("; ", ": ").replace("\n", "").split(": ");
+                    Logger.getGlobal().log(Level.WARNING, recvData);
 
-                    durationMillis = calcDurationMillis(recvData, receivedTimestamp);
-                    String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; CSQ: " + Integer.toString(dbm)
-                            + "; Height: " + dFormat.format(height) + "; Speed: " + dFormat.format(speed) + "; Lati: " + lFormat.format(latitude) + "; Long: "
-                            + lFormat.format(longitude) + "; Index: " + getRecvIndex(recvData)
-                            + ", Network: "+ networkType + ", ProcessDur: " + getServerProcessDuration(recvData) + ", durationTwoWay: " + durationMillis +  "\r\n";
+                    int dataIndex = 0;
+                    double processTime = 0;
+                    double sentTime = 0;
+
+                    try {
+                        dataIndex = Integer.parseInt(splited[1].replace(" ", ""));
+                        processTime = Double.parseDouble(splited[3].replace(" ", ""));
+                        sentTime = Double.parseDouble(splited[5].replace(" ", ""));
+
+                    } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+
+                        Logger.getGlobal().log(Level.SEVERE, "Error with recv: " + recvData);
+                        Logger.getGlobal().log(Level.SEVERE, e.getMessage());
+
+                    }
+
+                    double duration = receivedTime - sentTime - processTime;
+
+                    String message = "Index: " + Integer.toString(dataIndex) 
+                        + "; Duration: " + String.format("%.3f", duration) 
+                        + "; ReceivedTime: " + Long.toString((long)receivedTime) + "\r\n";
+
                     fileWrite(MyFileName, message);
                     Logger.getGlobal().log(Level.INFO, message);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                    if (e instanceof SocketException) {
-                        try {
-                            if (recvSocket == null){
-                                continue;
-                            }
-                            bufferedIn.close();
-                            _directIn.close();
-                            _directIn = new InputStreamReader(recvSocket.getInputStream());
-                            bufferedIn = new BufferedReader(_directIn);
 
-                        } catch (IOException ioe) {
-                            e.printStackTrace();
-                            return;
+                } catch (IOException e) {
+                    try {
+                        if (recvSocket != null){
+                            directIn.close();
+                            bufferedIn.close();
+                            recvSocket.close();
+                            recvSocket = null;
                         }
+
+                        if (socketCounter > 99){  // before sender resets
+                            recvSocket = new Socket(IP, clientRecvPort);
+                            directIn = new InputStreamReader(recvSocket.getInputStream());
+                            bufferedIn = new BufferedReader(directIn);
+                        }
+
+                    } catch (IOException e1) {
+                        System.err.println("socket IOException handling failed");
                     }
                 }
             }
         }
-
-        private class PackageLossException extends Exception {
-            public PackageLossException(String message) {
-                super(message);
-            }
-        }
     }
 
-
     public class SendThread implements Runnable {
-
-        // make timestamp string in init level
 
         SimpleDateFormat tFormatFile = new SimpleDateFormat("yyyy-MM-dd HHmm", Locale.CHINA);
 
@@ -623,18 +593,15 @@ public class MainActivity extends AppCompatActivity {
                         public void run() {
                             sendNum ++;
 
-                            String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; abstime: " + System.currentTimeMillis() + "; CSQ: " + Integer.toString(dbm)
-                                    + "; Height: " + dFormat.format(height)+ "; Speed: " + dFormat.format(speed) + "; Lati: " + lFormat.format(latitude) + "; Long: "
-                                    + lFormat.format(longitude) + "; Index: " + Integer.toString(sendNum) + "; Network: "+ networkType +  " \n";  // removed \r
+                            long currentTime = System.currentTimeMillis();
 
+                            String message = "Time: " + tFormat.format(currentTime) + "; Timestamp: " + Long.toString(currentTime) + "; CSQ: " + Integer.toString(dbm)
+                                    + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: "
+                                    + lFormat.format(longitude) + "; Index: " + Integer.toString(sendNum) + "; Network: "+ networkType +  "\r\n";
 
                             fileWrite(MyFileName, message);
 
-                            message = "From: Phone; " + message;
-
                             Message msg = Message.obtain();
-
-//                        message = String.format("%-200s", message);
 
                             try {
 
@@ -648,13 +615,6 @@ public class MainActivity extends AppCompatActivity {
 
                                     msg.what = 0x03;
                                     MainHandler.sendMessage(msg);
-
-                                    long[] awaitItem = {
-                                            sendNum,
-                                            System.currentTimeMillis()
-                                    };
-
-                                    awaitRecvBackList.putFirst(awaitItem);
 
                                 } else {
 
@@ -781,7 +741,7 @@ public class MainActivity extends AppCompatActivity {
 
                         String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; CSQ: " + Integer.toString(dbm)
                                 + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: "
-                                + lFormat.format(longitude) + "; Index: " + Integer.toString(UsendNum) + ", Network: "+ networkType +  "\r\n";
+                                + lFormat.format(longitude) + "; Index: " + Integer.toString(UsendNum) + "; Network: "+ networkType +  "\r\n";
 
                         fileWrite(MyFileName, message);
 

@@ -87,7 +87,7 @@ class receiveThread(threading.Thread):
                                     # print(items[0])
                                     if (items[0] == "Time"):
                                         dbData['Time'] = items[1]
-                                    if (items[0] == "abstime"):
+                                    if (items[0] == "Timestamp"):
                                         time_initial = items[1]
                                     if (items[0] == "CSQ"):
                                         dbData['CSQ'] = items[1]
