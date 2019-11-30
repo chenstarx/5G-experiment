@@ -156,13 +156,13 @@ class myThread(threading.Thread):
 
                             else:
                                 print("did not trigger send-back")
-                                print("data: ", dbData)
+
+                    isModule =    print("data: ", dbData)
                                 dataTemp = dataItem
                                 dataFlag = True
 
                 if "Module" in From:
-
-                    isModule = True
+ True
 
                     data = rawData.split("; ")
 
