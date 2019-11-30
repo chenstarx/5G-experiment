@@ -83,7 +83,7 @@ public class MainActivity extends AppCompatActivity {
 
     String networkType = "Unknown";
 
-    final String IP = "202.182.116.230";
+    final String IP = "101.132.97.148";
     private static final int clientSendPort = 55800;
     private static final int clientRecvPort = 55801;
 
@@ -99,7 +99,7 @@ public class MainActivity extends AppCompatActivity {
 
     double latitude = 0.0;
     double longitude = 0.0;
-
+/**/
     boolean BtnSendFlag = false;
     boolean BtnSendUFlag = false;
 
