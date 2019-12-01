@@ -6,30 +6,33 @@ from pymongo import MongoClient
 
 client = MongoClient()
 
-production_env = False
+production_env = True
 
 host = "0.0.0.0"
 port_recv = 55800
 port_send = 55801
 
 class replyThread(threading.Thread):
-    def __init__(self, socketInstance):
+    def __init__(self, connInstance):
         threading.Thread.__init__(self)
-        self.replySocket = socketInstance
-        self.replySocket.settimeout(120)
+        self.connection = connInstance
+        self.connection.settimeout(120)
 
     def close(self):
-        self.replySocket.shutdown(2)
-        self.replySocket.close()
+        try:
+            self.connection.shutdown(2)
+            self.connection.close()
+        except Exception as err:
+            print(err)
 
     def reply(self, index_send, server_time_start, time_initial):
         try:
             server_duration = round((1000 * (time.time() - server_time_start)), 3)
 
-            msg_send = "index: " + str(index_send) + "; server_process_time: " + \
-                    str(server_duration) + "; client_time_start: " + str(time_initial) + "\n"
+            msg_send = str(index_send) + "; " + str(server_duration) + "; " + str(time_initial) + "; \n"
 
-            self.replySocket.sendall(bytes(msg_send, 'utf-8'))
+            self.connection.sendall(bytes(msg_send, 'utf-8'))
+
             print(msg_send)
 
         except Exception as err:
@@ -38,23 +41,28 @@ class replyThread(threading.Thread):
 
 
 class receiveThread(threading.Thread):
-    def __init__(self, socketInstance, startTime):
+    def __init__(self, connInstance, startTime):
         threading.Thread.__init__(self)
         self.tableName = startTime
-        self.receiveSocket = socketInstance
-        self.receiveSocket.settimeout(120)
-        self.iostream = self.receiveSocket.makefile('r')
+        self.connection = connInstance
+        self.connection.settimeout(120)
+        self.iostream = self.connection.makefile('r')
 
     def close(self):
-        self.receiveSocket.shutdown(2)
-        self.receiveSocket.close()
-        self.iostream.close()
+        try:
+            global repThread
+            self.iostream.close()
+            self.connection.shutdown(2)
+            self.connection.close()
+            if not replyThread is None:
+                repThread.close()
+        except Exception as err:
+            print(err)
 
     def run(self):
-
-        global repThread
-
         while True:
+            global repThread
+
             try:
                 rawData = self.iostream.readline()
 
@@ -62,7 +70,6 @@ class receiveThread(threading.Thread):
                 
                 if str(rawData) == "":
                     self.close()
-                    repThread.close()
                     print("Connection Ended by Client\n")
                     break
 
@@ -100,10 +107,10 @@ class receiveThread(threading.Thread):
                                         dbData['Latitude'] = items[1]
                                     if (items[0] == "Long"):
                                         dbData['Longitude'] = items[1]
-                                    if (items[0] == "Network"):
-                                        dbData['Network'] = items[1]
                                     if (items[0] == "Speed"):
                                         dbData['Speed'] = items[1]
+                                    if (items[0] == "Network"):
+                                        dbData['Network'] = items[1].replace("\n", "")
 
                         if production_env:
                             mongo = client.surf
@@ -120,42 +127,51 @@ class receiveThread(threading.Thread):
                 break
 
 
+class watcherThread(threading.Thread):
+    def __init__(self, socket, socketType):
+        threading.Thread.__init__(self)
+        self.socket = socket
+        self.type = socketType
+    
+    def run(self):
+        print("\nWaiting for incoming", self.type, "connection")
+        while True:
+            conn, addr = self.socket.accept()
+            print(self.type, "connected with:", addr, "\n")
+
+            if self.type == 'receiver':
+                dt = datetime.datetime.now()
+                currentTime = dt.strftime('%m-%d %H:%M')
+
+                thread = receiveThread(conn, currentTime)
+                thread.start()
+
+            if self.type == 'replier':
+                global repThread
+                repThread = replyThread(conn)
+                repThread.start()
+
 # Initialize sending and receiving sockets
 
+repThread = None
+
 receiver = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
 receiver.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
 receiver.bind((host, port_recv))
 
 
-
 replier = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
 replier.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
 replier.bind((host, port_send))
 
 
 receiver.listen(1)
-
 replier.listen(1)
 
 
-while True:
-    print("Waiting for incoming connections\n")
+receiverWatcher = watcherThread(receiver, 'receiver')
+replierWatcher = watcherThread(replier, 'replier')
 
-    conn1, addr1 = receiver.accept()
-    print("receiver connected with:", addr1, "\n")
 
-    conn2, addr2 = replier.accept()
-    print("replier connected with:", addr2, "\n")
-
-    dt = datetime.datetime.now()
-    currentTime = dt.strftime('%m-%d %H:%M')
-
-    recvThread = receiveThread(conn1, currentTime)
-    recvThread.start()
-
-    repThread = replyThread(conn2)
-    repThread.start()
+receiverWatcher.start()
+replierWatcher.start()
