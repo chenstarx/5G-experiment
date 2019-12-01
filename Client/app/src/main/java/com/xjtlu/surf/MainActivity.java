@@ -102,8 +102,8 @@ public class MainActivity extends AppCompatActivity {
     double longitude = 0.0;
     double speed = 0.0;
 
-    boolean BtnSendFlag = false;
-    boolean BtnSendUFlag = false;
+    boolean isTcpSending = false;
+    boolean isUdpSending = false;
 
     @SuppressLint({"MissingPermission", "InvalidWakeLockTag"})
     @Override
@@ -423,9 +423,9 @@ public class MainActivity extends AppCompatActivity {
                     recvSocket = null;
                 }
 
-                if (BtnSendFlag) {
+                if (isTcpSending) {
                     wakeLock.release();
-                    BtnSendFlag = false;
+                    isTcpSending = false;
                 }
 
                 msg.what = 0x05;
@@ -486,7 +486,7 @@ public class MainActivity extends AppCompatActivity {
 
             while (true){
                 // end the thread when cancel sending
-                if (!BtnSendFlag) break;
+                if (!isTcpSending) break;
 
                 try {
                     if (bufferedIn == null || recvSocket == null){
@@ -497,8 +497,8 @@ public class MainActivity extends AppCompatActivity {
 
                     long receivedTime = System.currentTimeMillis();
 
-                    if (recvData == null){
-                        Logger.getGlobal().log(Level.WARNING, "Null recv");
+                    if (recvData == "" || recvData == null) {
+                        Logger.getGlobal().log(Level.WARNING, "Null Recv");
                         throw new IOException();
                     }
 
@@ -536,7 +536,7 @@ public class MainActivity extends AppCompatActivity {
                     try {
                         if (recvSocket == null){
                             Thread.sleep(500);
-                            if (!BtnSendFlag) break;
+                            if (!isTcpSending) break;
                             recvSocket = new Socket(IP, clientRecvPort);
                             directIn = new InputStreamReader(recvSocket.getInputStream());
                             bufferedIn = new BufferedReader(directIn);
@@ -571,9 +571,9 @@ public class MainActivity extends AppCompatActivity {
 
             if (sendSocket != null) {
 
-                if (BtnSendFlag) {
+                if (isTcpSending) {
 
-                    BtnSendFlag = false;
+                    isTcpSending = false;
 
                     wakeLock.release();
 
@@ -593,7 +593,7 @@ public class MainActivity extends AppCompatActivity {
                     }
 
                 } else {
-                    BtnSendFlag = true;
+                    isTcpSending = true;
 
                     MainTimer = new Timer();
 
@@ -642,7 +642,7 @@ public class MainActivity extends AppCompatActivity {
                                             msg.what = 0x01;
                                             MainHandler.sendMessage(msg);
 
-                                            BtnSendFlag = true;
+                                            // isTcpSending = true;
 
                                         } else {
 
@@ -670,8 +670,8 @@ public class MainActivity extends AppCompatActivity {
                                 }
 
                             } catch (Exception e) {
-                                //Connection Break Because of Network Error
-                                if (BtnSendFlag) BtnSendFlag = false;
+                                // Connection Break Because of Network Error
+                                // if (isTcpSending) isTcpSending = false;
 
                                 if (outputStream != null) {
                                     try {
@@ -719,9 +719,9 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void run() {
 
-            if (BtnSendUFlag) {
+            if (isUdpSending) {
 
-                BtnSendUFlag = false;
+                isUdpSending = false;
 
                 if (UMainTimer != null && UMainTask != null) {
 
@@ -740,7 +740,7 @@ public class MainActivity extends AppCompatActivity {
 
             } else {
 
-                BtnSendUFlag = true;
+                isUdpSending = true;
 
                 UMainTimer = new Timer();
 
