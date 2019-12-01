@@ -87,6 +87,8 @@ public class MainActivity extends AppCompatActivity {
     private static final int clientSendPort = 55800;
     private static final int clientRecvPort = 55801;
 
+    private static final int clientSendPortUdp = 55802;
+
     int dbm = -113;
     int sendNum = 0;
     int recvIndex = 0;
@@ -473,14 +475,19 @@ public class MainActivity extends AppCompatActivity {
             InputStreamReader directIn = null;
             BufferedReader bufferedIn = null;
 
-            try {
-                directIn = new InputStreamReader(recvSocket.getInputStream());
-                bufferedIn = new BufferedReader(directIn);
-            } catch (IOException e) {
-                e.printStackTrace();
+            if (recvSocket != null) {
+                try {
+                    directIn = new InputStreamReader(recvSocket.getInputStream());
+                    bufferedIn = new BufferedReader(directIn);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             }
 
             while (true){
+                // end the thread when cancel sending
+                if (!BtnSendFlag) break;
+
                 try {
                     if (bufferedIn == null || recvSocket == null){
                         throw new IOException();
@@ -488,24 +495,24 @@ public class MainActivity extends AppCompatActivity {
 
                     String recvData = bufferedIn.readLine();  // todo: check maybe-wrong: buffere invalid
 
-                    double receivedTime = (double) System.currentTimeMillis();
+                    long receivedTime = System.currentTimeMillis();
 
                     if (recvData == null){
                         Logger.getGlobal().log(Level.WARNING, "Null recv");
                         throw new IOException();
                     }
 
-                    String[] splited = recvData.replace("; ", ": ").replace("\n", "").split(": ");
+                    String[] splited = recvData.split("; ");
                     Logger.getGlobal().log(Level.WARNING, recvData);
 
                     int dataIndex = 0;
                     double processTime = 0;
-                    double sentTime = 0;
+                    long sentTime = 0;
 
                     try {
-                        dataIndex = Integer.parseInt(splited[1].replace(" ", ""));
-                        processTime = Double.parseDouble(splited[3].replace(" ", ""));
-                        sentTime = Double.parseDouble(splited[5].replace(" ", ""));
+                        dataIndex = Integer.parseInt(splited[0]);
+                        processTime = Double.parseDouble(splited[1]);
+                        sentTime = Long.parseLong(splited[2]);
 
                     } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
 
@@ -514,32 +521,33 @@ public class MainActivity extends AppCompatActivity {
 
                     }
 
-                    double duration = receivedTime - sentTime - processTime;
+                    double duration = (double) receivedTime - (double) sentTime - processTime;
 
-                    String message = "Index: " + Integer.toString(dataIndex) 
-                        + "; Duration: " + String.format("%.3f", duration) 
-                        + "; ReceivedTime: " + Long.toString((long)receivedTime) + "\r\n";
+                    String message = "Index: " + Integer.toString(dataIndex)  
+                        + "; ReceivedTime: " + Long.toString(receivedTime) 
+                        + "; SentTime: " + Long.toString(sentTime)
+                        + "; ProcessTime: " + String.format("%.3f", processTime)
+                        + "; Duration: " + String.format("%.3f", duration) + "\r\n";
 
                     fileWrite(MyFileName, message);
                     Logger.getGlobal().log(Level.INFO, message);
 
                 } catch (IOException e) {
                     try {
-                        if (recvSocket != null){
+                        if (recvSocket == null){
+                            Thread.sleep(500);
+                            if (!BtnSendFlag) break;
+                            recvSocket = new Socket(IP, clientRecvPort);
+                            directIn = new InputStreamReader(recvSocket.getInputStream());
+                            bufferedIn = new BufferedReader(directIn);
+                        } else {
                             directIn.close();
                             bufferedIn.close();
                             recvSocket.close();
                             recvSocket = null;
                         }
-
-                        if (socketCounter > 99){  // before sender resets
-                            recvSocket = new Socket(IP, clientRecvPort);
-                            directIn = new InputStreamReader(recvSocket.getInputStream());
-                            bufferedIn = new BufferedReader(directIn);
-                        }
-
-                    } catch (IOException e1) {
-                        System.err.println("socket IOException handling failed");
+                    } catch (IOException | InterruptedException e1) {
+                        e1.printStackTrace();
                     }
                 }
             }
@@ -594,15 +602,8 @@ public class MainActivity extends AppCompatActivity {
                     MainTask = new TimerTask() {
                         @Override
                         public void run() {
-                            sendNum ++;
 
                             long currentTime = System.currentTimeMillis();
-
-                            String message = "Time: " + tFormat.format(currentTime) + "; Timestamp: " + Long.toString(currentTime) + "; CSQ: " + Integer.toString(dbm)
-                                    + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: " + lFormat.format(longitude)
-                                    + "; Index: " + Integer.toString(sendNum) + "; Speed: " + dFormat.format(speed) + "; Network: "+ networkType +  "\r\n";
-
-                            fileWrite(MyFileName, message);
 
                             Message msg = Message.obtain();
 
@@ -610,11 +611,19 @@ public class MainActivity extends AppCompatActivity {
 
                                 if (sendSocket != null) {
 
+                                    String message = "Time: " + tFormat.format(currentTime) + "; Timestamp: " + Long.toString(currentTime) + "; CSQ: " + Integer.toString(dbm)
+                                    + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: " + lFormat.format(longitude)
+                                    + "; Index: " + Integer.toString(sendNum) + "; Speed: " + dFormat.format(speed) + "; Network: "+ networkType +  "\r\n";
+
+                                    fileWrite(MyFileName, message);
+
                                     outputStream = sendSocket.getOutputStream();
 
                                     outputStream.write(message.getBytes("utf-8"));
 
                                     outputStream.flush();
+
+                                    sendNum ++;
 
                                     msg.what = 0x03;
                                     MainHandler.sendMessage(msg);
@@ -738,27 +747,28 @@ public class MainActivity extends AppCompatActivity {
                 UMainTask = new TimerTask() {
                     @Override
                     public void run() {
-                        UsendNum++;
 
                         Message msg = Message.obtain();
-
-                        String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; CSQ: " + Integer.toString(dbm)
-                                + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: " + lFormat.format(longitude) 
-                                + "; Speed: " + dFormat.format(speed) + "; Index: " + Integer.toString(UsendNum) + "; Network: "+ networkType +  "\r\n";
-
-                        fileWrite(MyFileName, message);
-
-                        byte bMessage[] = message.getBytes();
 
                         try {
 
                             if (UDPsocket != null) {
 
-                                InetAddress serverAddress = InetAddress.getByName("101.132.97.148");
+                                String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; CSQ: " + Integer.toString(dbm)
+                                + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: " + lFormat.format(longitude) 
+                                + "; Speed: " + dFormat.format(speed) + "; Index: " + Integer.toString(UsendNum) + "; Network: "+ networkType +  "\r\n";
+                                
+                                fileWrite(MyFileName, message);
 
-                                DatagramPacket packet = new DatagramPacket(bMessage, bMessage.length, serverAddress, 7671);
+                                byte bMessage[] = message.getBytes();
+
+                                InetAddress serverAddress = InetAddress.getByName(IP);
+
+                                DatagramPacket packet = new DatagramPacket(bMessage, bMessage.length, serverAddress, clientSendPortUdp);
 
                                 UDPsocket.send(packet);
+
+                                UsendNum ++;
 
                                 msg.what = 0x07;
                                 MainHandler.sendMessage(msg);
