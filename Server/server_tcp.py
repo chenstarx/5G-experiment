@@ -113,7 +113,7 @@ class receiveThread(threading.Thread):
                                         dbData['Network'] = items[1].replace("\n", "")
 
                         if production_env:
-                            mongo = client.surf
+                            mongo = client.drone
                             table = mongo[self.tableName]
                             table.insert_one(dbData)
                             repThread.reply(index_send, server_time_start, time_initial)
