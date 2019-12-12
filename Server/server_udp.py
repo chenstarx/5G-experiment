@@ -7,21 +7,16 @@ from pymongo import MongoClient
 client = MongoClient()
 
 host = "0.0.0.0"
-port = 7671
+port = 55802
 
-class myThread (threading.Thread):
-    def __init__(self, data, time):
+class dbSaver (threading.Thread):
+    def __init__(self, time):
         threading.Thread.__init__(self)
         self.time = time
-        self.data = data.decode('utf-8')
         
-    def run(self):
+    def save(self, recvData):
         try:
-            # print(self.data)
-            # print(self.time)
-
-            rawData = self.data.split("\r\n")
-            rawData.pop()
+            rawData = recvData.split("\r\n")
 
             for dataItem in rawData:
                 data = dataItem.split("; ")
@@ -44,8 +39,8 @@ class myThread (threading.Thread):
                             if (items[0] == "Long"):
                                 dbData['Longitude'] = items[1]
 
-                if (("Time" in dbData) and ("CSQ" in dbData) and ("Index" in dbData) and ("Height" in dbData)):
-                    mongo = client.surf
+                if ("Index" in dbData):
+                    mongo = client.droneudp
                     table = mongo[self.time]
                     table.insert_one(dbData)
             
@@ -58,16 +53,19 @@ udps.bind((host,port))
 
 lastAddr = ''
 
+print('Start listening on port', port)
+
 while True:
-    data, addr = udps.recvfrom(8192)
+    data, addr = udps.recvfrom(1024)
 
     if addr != lastAddr:
         dt = datetime.datetime.now()
-        currentTime = dt.strftime('%m-%d %H:%M') + " UDP"
+        currentTime = dt.strftime('%m-%d %H:%M')
+
+        saver = dbSaver(currentTime)
+
     lastAddr = addr
 
-    newThread = myThread(data, currentTime)
-
-    newThread.start()
+    saver.save(data.decode('utf-8'))
 
 udps.close()
