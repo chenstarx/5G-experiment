@@ -80,6 +80,11 @@ public class MainActivity extends AppCompatActivity {
     LocationManager locationManager;
 
     String networkType = "Unknown";
+    // if networkType is detected to be 5G
+    // then NRNetworkType will specify whether it is
+    // SA, NSA or NSA-mmWave
+    
+    String NRNetworkType = "5G-Unknown";
 
     // final String IP = "192.168.0.4";
     final String IP = "101.132.97.148";
@@ -146,6 +151,9 @@ public class MainActivity extends AppCompatActivity {
         SocketSendU SendUListener = new SocketSendU();
 
         MyTelephonyManager.listen(MyListener, MyPhoneStateListener.LISTEN_SIGNAL_STRENGTHS);
+        
+        // update 0901/20: add listen for cell strength
+        MyTelephonyManager.listen(MyListener, MyPhoneStateListener.LISTEN_DISPLAY_INFO_CHANGED);
 
         BtnConnect.setOnClickListener(ConnectListener);
         BtnSend.setOnClickListener(SendListener);
@@ -184,8 +192,16 @@ public class MainActivity extends AppCompatActivity {
                     TcpStatus.setText(("TCP Status: Connected"));
                     break;
                 case 0x02:
-                    MyTextView.setText((Integer.toString(dbm) + "dBm"));
-                    netStateView.setText(IP + ", " + networkType);
+                    // specify detailed network type
+                    String _networkType = "";
+                    if networkType.contains("5G"){
+                        _networkType = NRNetworkType;
+                    }else{
+                        _networkType = networkType;
+                    }
+                    
+                    MyTextView.setText((Integer.toString(dbm) + "dBm"));                    
+                    netStateView.setText(IP + ", " + _networkType);
                     break;
                 case 0x03:
                     BtnSend.setText(("<ON> TCP SEND"));
@@ -327,7 +343,7 @@ public class MainActivity extends AppCompatActivity {
             case TelephonyManager.NETWORK_TYPE_LTE:
                 return "4G";
             case TelephonyManager.NETWORK_TYPE_UNKNOWN:  // no TYPE_NR provided for this version of Android SDK
-                if (Build.VERSION.SDK_INT < 29) return "5G or Unknown";
+                if (Build.VERSION.SDK_INT < 29) return "Unknown (API too old)";
                 else return "Unknown";
             default:
                 if (Build.VERSION.SDK_INT >= 29) {
@@ -352,6 +368,7 @@ public class MainActivity extends AppCompatActivity {
             Message msg = Message.obtain();
 
             try {
+                // networkType is a String variable referenced by logger
                 networkType = getNetworkClass();
 
                 dbm = (Integer) signalStrength.getClass().getMethod("getDbm").invoke(signalStrength);
@@ -366,6 +383,27 @@ public class MainActivity extends AppCompatActivity {
             msg.what = 0x02;
             MainHandler.sendMessage(msg);
         }
+        
+        // for API 30
+        // @Override
+        // public void onDisplayInfoChanged(TelephonyDisplayInfo displayInfo){
+        //     int overrideNetworkType = displayInfo.getOverrideNetworkType();
+        //     switch (overrideNetworkType){
+        //         case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_LTE_ADVANCED_PRO:
+        //             NRNetworkType = "5G-SA";
+        //             break;
+        //         case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA:
+        //             NRNetworkType = "5G-NSA-base";
+        //             break;
+        //         case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA_MMWAVE:
+        //             NRNetworkType = "5G-NSA-mmWave";
+        //             break;
+        //         default:
+        //             NRNetworkType = "5G-Unknown";
+        //     }
+        // }
+		        
+        
     }
 
     public class SocketConnect implements OnClickListener {
@@ -753,10 +791,15 @@ public class MainActivity extends AppCompatActivity {
                         try {
 
                             if (UDPsocket != null) {
-
+                                String _networkType = "";
+                                if networkType.contains("5G"){
+                                    _networkType = NRNetworkType;
+                                }else{
+                                    _networkType = networkType;
+                                }
                                 String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; CSQ: " + Integer.toString(dbm)
                                 + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: " + lFormat.format(longitude) 
-                                + "; Speed: " + dFormat.format(speed) + "; Index: " + Integer.toString(UsendNum) + "; Network: "+ networkType +  "\r\n";
+                                + "; Speed: " + dFormat.format(speed) + "; Index: " + Integer.toString(UsendNum) + "; Network: "+ _networkType +  "\r\n";
                                 
                                 fileWrite(MyFileName, message);
 
