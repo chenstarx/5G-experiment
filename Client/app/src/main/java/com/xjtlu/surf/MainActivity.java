@@ -216,11 +216,11 @@ public class MainActivity extends AppCompatActivity {
                 case 0x02:
                     // specify detailed network type
                     String _networkType = "";
-                    if (networkType.contains("5G")) {
+                    if (NRNetworkType.contains("5G")) {
                         _networkType = NRNetworkType;
                     } else {
-//                        _networkType = networkType;
-                        _networkType = NRNetworkType;
+                        _networkType = networkType;
+//                        _networkType = NRNetworkType;
                     }
                     MyTextView.setText((Integer.toString(dbm) + "dBm"));
                     netStateView.setText(IP + ", " + _networkType);
@@ -480,14 +480,12 @@ public class MainActivity extends AppCompatActivity {
                 Logger.getGlobal().info("acquiring cell info");
                 System.out.println("------ acquiring cell info ------");
                 for (CellSignalStrength c : signalStrength.getCellSignalStrengths()) {
-                    System.err.println(c.getClass().getName());
-                    CellSignalStrengthNr nrholder = null;
+                    System.out.println(c.getClass().getName());
+                    CellSignalStrengthNr nrholder = (CellSignalStrengthNr) c;
                     CellSignalStrengthLte lteholder = null;
                     CellSignalStrengthCdma cdmaholder = null;
 
-                    if (c instanceof CellSignalStrengthNr) {
-                        nrholder = (CellSignalStrengthNr) c;
-                    } else if (c instanceof CellSignalStrengthLte) {
+                    if (c instanceof CellSignalStrengthLte) {
                         lteholder = (CellSignalStrengthLte) c;
                     } else if (c instanceof CellSignalStrengthCdma) {
                         cdmaholder = (CellSignalStrengthCdma) c;
@@ -536,15 +534,18 @@ public class MainActivity extends AppCompatActivity {
 
             int overrideNetworkType = displayInfo.getOverrideNetworkType();
             System.out.println(overrideNetworkType);
-             switch (overrideNetworkType){
+            switch (overrideNetworkType){
                  case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_LTE_ADVANCED_PRO:
-                     NRNetworkType = "5G-SA";
+                     NRNetworkType = "5Ge";
                      break;
                  case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA:
                      NRNetworkType = "5G-NSA-base";
                      break;
                  case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_NR_NSA_MMWAVE:
                      NRNetworkType = "5G-NSA-mmWave";
+                     break;
+                 case TelephonyDisplayInfo.OVERRIDE_NETWORK_TYPE_LTE_CA:
+                     NRNetworkType = "4G-CA";
                      break;
                  default:
                      NRNetworkType = "Unclear-refreshed";
@@ -929,11 +930,11 @@ public class MainActivity extends AppCompatActivity {
 
                             if (UDPsocket != null) {
                                 String _networkType = "";
-                                if (networkType.contains("5G")){
+                                if (NRNetworkType.contains("5G")){
                                     _networkType = NRNetworkType;
                                 }else{
-//                                    _networkType = networkType;
-                                    _networkType = NRNetworkType;
+                                    _networkType = networkType;
+//                                    _networkType = NRNetworkType;
 
                                 }
                                 String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; CSQ: " + Integer.toString(dbm)
