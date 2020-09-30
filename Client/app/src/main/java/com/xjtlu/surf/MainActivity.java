@@ -103,9 +103,9 @@ public class MainActivity extends AppCompatActivity {
     String NRNetworkType = "Unclear";
 
     // final String IP = "192.168.0.4";
-    String IP = "101.132.97.148";
+    String IP = "139.224.83.62";
 
-    private static final int clientSendPort = 55800;
+    private static final int clientSendPort = 34134;
     private static final int clientRecvPort = 55801;
 
     private static final int clientSendPortUdp = 55802;
@@ -274,7 +274,6 @@ public class MainActivity extends AppCompatActivity {
             if (initCounter < 10 && !initFlag) {
 
                 initHeight += 44330000 * (1 - (Math.pow((Double.parseDouble(dFormat.format(event.values[0])) / 1013.25), (float) 1.0 / 5255.0)));
-
                 initCounter++;
 
             }
@@ -282,7 +281,6 @@ public class MainActivity extends AppCompatActivity {
             if (initCounter == 10 && !initFlag) {
 
                 initHeight = initHeight / 10;
-
                 initFlag = true;
 
             }
@@ -290,7 +288,6 @@ public class MainActivity extends AppCompatActivity {
             if (initFlag) {
 
                 height = 44330000 * (1 - (Math.pow((Double.parseDouble(dFormat.format(event.values[0])) / 1013.25), (float) 1.0 / 5255.0)));
-
                 height -= initHeight;
 
             }
@@ -342,58 +339,6 @@ public class MainActivity extends AppCompatActivity {
 
         }
     };
-
-    public String getNetworkClass() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
-            Logger.getGlobal().info("Failed to acquire phone state permission");
-            return "Unknown";
-        }
-        int networkType = MyTelephonyManager.getNetworkType();
-        switch (networkType) {
-            case TelephonyManager.NETWORK_TYPE_GPRS:
-            case TelephonyManager.NETWORK_TYPE_EDGE:
-            case TelephonyManager.NETWORK_TYPE_CDMA:
-            case TelephonyManager.NETWORK_TYPE_1xRTT:
-            case TelephonyManager.NETWORK_TYPE_IDEN:
-                return "2G";
-            case TelephonyManager.NETWORK_TYPE_UMTS:
-            case TelephonyManager.NETWORK_TYPE_EVDO_0:
-            case TelephonyManager.NETWORK_TYPE_EVDO_A:
-            case TelephonyManager.NETWORK_TYPE_HSDPA:
-            case TelephonyManager.NETWORK_TYPE_HSUPA:
-            case TelephonyManager.NETWORK_TYPE_HSPA:
-            case TelephonyManager.NETWORK_TYPE_EVDO_B:
-            case TelephonyManager.NETWORK_TYPE_EHRPD:
-            case TelephonyManager.NETWORK_TYPE_HSPAP:
-                return "3G";
-            case TelephonyManager.NETWORK_TYPE_LTE:
-                return "4G";
-            case TelephonyManager.NETWORK_TYPE_UNKNOWN:  // no TYPE_NR provided for this version of Android SDK
-                if (Build.VERSION.SDK_INT < 29) return "Unknown (API too old)";
-                else return "Unknown";
-            case 20:  // the value for NR. In this case, we will ignore whether this phone supports API 29
-                return "5G";
-            default:
-                if (Build.VERSION.SDK_INT >= 29) {
-//                    try{
-//                        Field vfield = TelephonyManager.class.getField("NETWORK_TYPE_NR");
-//                        int field = vfield.getInt(null);
-//                        if (networkType == field) return "5G";
-//                    } catch (NoSuchFieldException | IllegalAccessException e) {
-//                        Logger.getGlobal().log(Level.SEVERE, "5G inspection failed under SDK 29 or higher. Should\'nt happen");
-//                    }
-
-                }
-                return "Unknown";
-        }
-    }
 
     public boolean isNRConnected() {
         TelephonyManager telephonyManager = this.MyTelephonyManager;
@@ -506,7 +451,7 @@ public class MainActivity extends AppCompatActivity {
 
 //                dbm = (Integer) signalStrength.getClass().getMethod("getDbm").invoke(signalStrength);
             } catch (Exception e) {
-                System.err.println("dbm updateai fled");
+                System.err.println("dbm update failed");
                 e.printStackTrace();
             }
 
@@ -707,6 +652,8 @@ public class MainActivity extends AppCompatActivity {
 
                     }
 
+                    // todo: inject signal strength acquisition here
+
                     double duration = (double) receivedTime - (double) sentTime - processTime;
 
                     String message = "Index: " + Integer.toString(dataIndex)  
@@ -795,7 +742,10 @@ public class MainActivity extends AppCompatActivity {
 
                                 if (sendSocket != null) {
 
-                                    String message = "Time: " + tFormat.format(currentTime) + "; Timestamp: " + Long.toString(currentTime) + "; CSQ: " + Integer.toString(dbm)
+                                    // todo: inject signal strength acquisition
+                                    int currentDbm = getCurrentDbm();
+
+                                    String message = "Time: " + tFormat.format(currentTime) + "; Timestamp: " + Long.toString(currentTime) + "; CSQ: " + currentDbm // Integer.toString(dbm)
                                     + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: " + lFormat.format(longitude)
                                     + "; Index: " + Integer.toString(sendNum) + "; Speed: " + dFormat.format(speed) + "; Network: "+ networkType +  "\r\n";
 
@@ -880,6 +830,20 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private int getCurrentDbm() {
+        int currentDbm = -1;
+        SignalStrength strength = MyTelephonyManager
+               .getSignalStrength();
+        if (strength != null) {
+            List<CellSignalStrengthNr> listSignalStrengths =
+                strength.getCellSignalStrengths(CellSignalStrengthNr.class);
+            if (! listSignalStrengths.isEmpty()){
+                currentDbm = listSignalStrengths.get(0).getDbm();
+            }
+        }
+        return currentDbm;
+    }
+
     public class SendUThread implements Runnable {
 
         SimpleDateFormat tFormatFile = new SimpleDateFormat("yyyy-MM-dd HHmm", Locale.CHINA);
@@ -937,7 +901,8 @@ public class MainActivity extends AppCompatActivity {
 //                                    _networkType = NRNetworkType;
 
                                 }
-                                String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; CSQ: " + Integer.toString(dbm)
+                                int currentDbm = getCurrentDbm();
+                                String message = "Time: " + tFormat.format(System.currentTimeMillis()) + "; CSQ: " + getCurrentDbm() // Integer.toString(dbm)
                                 + "; Height: " + dFormat.format(height) + "; Lati: " + lFormat.format(latitude) + "; Long: " + lFormat.format(longitude) 
                                 + "; Speed: " + dFormat.format(speed) + "; Index: " + Integer.toString(UsendNum) + "; Network: "+ _networkType +  "\r\n";
                                 
